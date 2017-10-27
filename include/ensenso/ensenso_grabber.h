@@ -1,6 +1,7 @@
 #ifndef __ENSENSO_ENSENSO_GRABBER__
 #define __ENSENSO_ENSENSO_GRABBER__
 
+#include <map>
 // PCL
 #include <pcl/pcl_config.h>
 #include <pcl/common/io.h>
@@ -126,12 +127,13 @@ public:
     std::string getName () const;
     
     /** @brief Get meta information for a monocular camera.
+     * @param[in] serial The camera serial number
      * @param[in] cam A string containing the camera (Left or Right)
      * @param[out] cam_info meta information for a camera.
      * @return True if successful, false otherwise
      * @note See: [sensor_msgs/CameraInfo](http://docs.ros.org/api/sensor_msgs/html/msg/CameraInfo.html)
      */
-    bool getCameraInfo(std::string cam, sensor_msgs::CameraInfo &cam_info) const;
+    bool getCameraInfo(std::string serial, std::string cam, sensor_msgs::CameraInfo &cam_info) const;
     
     /** @brief Get the raw stereo pattern information and the pattern pose. Before using it enable the
      * storeCalibrationPattern.
@@ -465,8 +467,8 @@ protected:
     /** @brief Boost images + point cloud signal */
     boost::signals2::signal<sig_cb_ensenso_point_cloud_images>* point_cloud_images_signal_;
     
-    /** @brief Reference to the camera tree */
-    NxLibItem camera_;
+    /** @brief Direct references to the camera tree by serial number */
+    std::map<std::string, NxLibItem> cameras_;
     
     /** @brief Reference to the NxLib tree root */
     boost::shared_ptr<const NxLibItem> root_;

@@ -35,7 +35,6 @@ class EnsensoDriver
 {
   private:
     // ROS
-    ros::NodeHandle                   nh_, nh_private_;
     ros::ServiceServer                pattern_srv_;
     ros::ServiceServer                collect_srv_;
     ros::ServiceServer                calibrate_srv_;
@@ -63,33 +62,38 @@ class EnsensoDriver
     pcl::EnsensoGrabber::Ptr          ensenso_ptr_;
 
   public:
-     EnsensoDriver():
+     EnsensoDriver(ros::NodeHandle nh):
       is_streaming_images_(false),
-      is_streaming_cloud_(false),
-      nh_private_("~")
+      is_streaming_cloud_(false)
     {
       // Read parameters
+      ros::NodeHandle nhp("~");
+      // Required
       std::string serial;
-      nh_private_.param(std::string("serial"), serial, std::string("150534"));
-      if (!nh_private_.hasParam("serial"))
-        ROS_WARN_STREAM("Parameter [~serial] not found, using default: " << serial);
-      nh_private_.param("camera_frame_id", camera_frame_id_, std::string("ensenso_optical_frame"));
-      if (!nh_private_.hasParam("camera_frame_id"))
+      if (!nhp.hasParam("serial"))
+        throw std::runtime_error("Required parameter [~serial] not found");
+      else
+        nhp.getParam("serial", serial);
+
+      // Optional
+      nhp.param("camera_frame_id", camera_frame_id_, std::string("ensenso_optical_frame"));
+      if (!nhp.hasParam("camera_frame_id"))
         ROS_WARN_STREAM("Parameter [~camera_frame_id] not found, using default: " << camera_frame_id_);
-      nh_private_.param("stream_calib_pattern", stream_calib_pattern_, false);
-      if (!nh_private_.hasParam("stream_calib_pattern"))
+      nhp.param("stream_calib_pattern", stream_calib_pattern_, false);
+      if (!nhp.hasParam("stream_calib_pattern"))
         ROS_WARN_STREAM("Parameter [~stream_calib_pattern] not found, using default: " << (stream_calib_pattern_ ? "TRUE":"FALSE"));
+
       // Advertise topics
-      image_transport::ImageTransport it(nh_);
+      image_transport::ImageTransport it(nh);
       l_raw_pub_ = it.advertiseCamera("left/image_raw", 1);
       r_raw_pub_ = it.advertiseCamera("right/image_raw", 1);
       l_rectified_pub_ = it.advertise("left/image_rect", 1);
       r_rectified_pub_ = it.advertise("right/image_rect", 1);
-      cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2 >("depth/points", 1, false);
-      linfo_pub_=nh_.advertise<sensor_msgs::CameraInfo> ("left/camera_info", 1, false);
-      rinfo_pub_=nh_.advertise<sensor_msgs::CameraInfo> ("right/camera_info", 1, false);
-      pattern_raw_pub_=nh_.advertise<ensenso::RawStereoPattern> ("pattern/stereo", 1, false);
-      pattern_pose_pub_=nh_.advertise<geometry_msgs::PoseStamped> ("pattern/pose", 1, false);
+      cloud_pub_ = nh.advertise<sensor_msgs::PointCloud2 >("depth/points", 1, false);
+      linfo_pub_=nh.advertise<sensor_msgs::CameraInfo> ("left/camera_info", 1, false);
+      rinfo_pub_=nh.advertise<sensor_msgs::CameraInfo> ("right/camera_info", 1, false);
+      pattern_raw_pub_=nh.advertise<ensenso::RawStereoPattern> ("pattern/stereo", 1, false);
+      pattern_pose_pub_=nh.advertise<geometry_msgs::PoseStamped> ("pattern/pose", 1, false);
       // Initialize Ensenso
       ensenso_ptr_.reset(new pcl::EnsensoGrabber);
       ensenso_ptr_->openDevice(serial);
@@ -102,9 +106,9 @@ class EnsensoDriver
       // Start the camera.
       ensenso_ptr_->start();
       // Advertise services
-      calibrate_srv_ = nh_.advertiseService("calibrate_handeye", &EnsensoDriver::calibrateHandEyeCB, this);
-      pattern_srv_ = nh_.advertiseService("estimate_pattern_pose", &EnsensoDriver::estimatePatternPoseCB, this);
-      collect_srv_ = nh_.advertiseService("collect_pattern", &EnsensoDriver::collectPatternCB, this);
+      calibrate_srv_ = nh.advertiseService("calibrate_handeye", &EnsensoDriver::calibrateHandEyeCB, this);
+      pattern_srv_ = nh.advertiseService("estimate_pattern_pose", &EnsensoDriver::estimatePatternPoseCB, this);
+      collect_srv_ = nh.advertiseService("collect_pattern", &EnsensoDriver::collectPatternCB, this);
       ROS_INFO("Finished [ensenso_driver] initialization");
     }
 
@@ -507,8 +511,16 @@ class EnsensoDriver
 int main(int argc, char **argv)
 {
   ros::init (argc, argv, "ensenso_driver");
-  EnsensoDriver driver;
-  ros::spin();
-  ros::shutdown();
+  ros::NodeHandle nh;
+  try
+  {
+    EnsensoDriver driver(nh);
+    ros::spin();
+  }
+  catch (const std::runtime_error &ex)
+  {
+    ROS_ERROR_STREAM(ex.what()); 
+    return 1;
+  }
   return 0;
 }
