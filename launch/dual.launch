@@ -1,0 +1,14 @@
+<launch>
+    <include file="$(find ensenso)/launch/viewer.launch" ns="sensor_front">
+        <arg name="serial" value="160678" />
+        <arg name="camera_frame_id" value="cal_frame"/>
+        <arg name="rqt" value="false" />
+        <arg name="rviz" value="false" />
+    </include>
+    <include file="$(find ensenso)/launch/viewer.launch" ns="sensor_rear">
+        <arg name="serial" value="171576" />
+        <arg name="camera_frame_id" value="cal_frame"/>
+        <arg name="rqt" value="false" />
+        <arg name="rviz" value="false" />
+    </include>
+</launch>

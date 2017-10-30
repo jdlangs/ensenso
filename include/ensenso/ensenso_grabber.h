@@ -497,6 +497,12 @@ protected:
     
     /** @brief Mutual exclusion for FPS computation */
     mutable boost::mutex fps_mutex_;
+
+    /** @brief Mutual exclusion for any NxLib command.
+     *
+     * This is required when multiple cameras are running in the same process
+     */
+    mutable boost::mutex nxlib_mutex_;
     
     /** @brief Convert an Ensenso time stamp into a PCL/ROS time stamp
      * @param[in] ensenso_stamp

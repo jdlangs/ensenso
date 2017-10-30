@@ -1,0 +1,35 @@
+stream_calib_pattern: false
+camera_frame_id: camera_optical_frame
+AutoBlackLevel: true
+AutoExposure: true
+AutoGain: true
+Binning: 1
+BlackLevelOffset: 0
+DisparityMapAOI: false
+Exposure: 1
+FlexView: false
+FlexViewImages: 2
+FrontLight: false
+Gain: 1
+GainBoost: false
+HardwareGamma: true
+Hdr: false
+PixelClock: 24
+Projector: true
+TargetBrightness: 80
+TriggerMode: 0  #Software: 0, FallingEdge: 1, RisingEdge: 2
+MinimumDisparity: -64
+NumberOfDisparities: 128
+OptimizationProfile: 2  #Aligned: 0, Diagonal: 1, AlignedAndDiagonal: 2
+Scaling: 1
+DepthChangeCost: 5
+DepthStepCost: 30
+ShadowingThreshold: 1
+UniquenessRatio: 10
+MedianFilterRadius: 1
+SpeckleComponentThreshold: 3
+SpeckleRegionSize: 150
+FillBorderSpread: 3
+FillRegionSize: 150
+Cloud: true
+Images: true

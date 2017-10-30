@@ -3,6 +3,7 @@
 #include <sensor_msgs/Image.h>
 #include <cv_bridge/cv_bridge.h>
 #include <pcl_ros/point_cloud.h>
+#include <xmlrpcpp/XmlRpcException.h>
 // Conversions
 #include <eigen_conversions/eigen_msg.h>
 // Ensenso grabber
@@ -30,8 +31,7 @@ typedef std::pair<pcl::PCLImage, pcl::PCLImage> PairOfImages;
 typedef pcl::PointXYZ PointXYZ;
 typedef pcl::PointCloud<PointXYZ> PointCloudXYZ;
 
-
-class EnsensoDriver
+class EnsensoROSInterface
 {
   private:
     // ROS
@@ -49,40 +49,33 @@ class EnsensoDriver
     ros::Publisher                    pattern_pose_pub_;
     ros::Publisher                    pattern_raw_pub_;
     // Streaming configuration
-    bool                              is_streaming_cloud_;
-    bool                              is_streaming_images_;
-    bool                              stream_calib_pattern_;
+    bool                              is_streaming_cloud_ = false;
+    bool                              is_streaming_images_ = false;
+    bool                              stream_calib_pattern_ = false;
     // Camera info
     ros::Publisher                    linfo_pub_;
     ros::Publisher                    rinfo_pub_;
     // TF
-    std::string                       camera_frame_id_;
+    std::string                       camera_frame_id_ = "camera_optical_frame";
     // Ensenso grabber
     boost::signals2::connection       connection_;
 
-    std::map<std::string, pcl::EnsensoGrabber::Ptr> ensensos_;
+    pcl::EnsensoGrabber::Ptr ensenso_ptr_;
 
   public:
-     EnsensoDriver(ros::NodeHandle nh):
-      is_streaming_images_(false),
-      is_streaming_cloud_(false)
+    EnsensoROSInterface(ros::NodeHandle nh, std::string serial) :
+      reconfigure_server_(ros::NodeHandle(ros::NodeHandle("~"), nh.getNamespace()))
     {
-      // Read parameters
-      ros::NodeHandle nhp("~");
-      // Required
-      std::string serial;
-      if (!nhp.hasParam("serial"))
-        throw std::runtime_error("Required parameter [~serial] not found");
-      else
-        nhp.getParam("serial", serial);
+      ROS_INFO_STREAM("Constructing Ensenso interface in namespace: " << nh.getNamespace());
 
-      // Optional
-      nhp.param("camera_frame_id", camera_frame_id_, std::string("ensenso_optical_frame"));
-      if (!nhp.hasParam("camera_frame_id"))
-        ROS_WARN_STREAM("Parameter [~camera_frame_id] not found, using default: " << camera_frame_id_);
-      nhp.param("stream_calib_pattern", stream_calib_pattern_, false);
-      if (!nhp.hasParam("stream_calib_pattern"))
-        ROS_WARN_STREAM("Parameter [~stream_calib_pattern] not found, using default: " << (stream_calib_pattern_ ? "TRUE":"FALSE"));
+      // Read parameters from the private node subspace
+      ros::NodeHandle nhp(std::string("~"), nh.getNamespace());
+      if (! nhp.getParam("camera_frame_id", camera_frame_id_))
+        ROS_WARN_STREAM("Parameter [~camera_frame_id] not loaded, using default: " <<
+                        camera_frame_id_);
+      if (! nhp.getParam("stream_calib_pattern", stream_calib_pattern_))
+        ROS_WARN_STREAM("Parameter [~stream_calib_pattern] not loaded, using default: " <<
+                        (stream_calib_pattern_ ? "TRUE":"FALSE"));
 
       // Advertise topics
       image_transport::ImageTransport it(nh);
@@ -91,10 +84,10 @@ class EnsensoDriver
       l_rectified_pub_ = it.advertise("left/image_rect", 1);
       r_rectified_pub_ = it.advertise("right/image_rect", 1);
       cloud_pub_ = nh.advertise<sensor_msgs::PointCloud2 >("depth/points", 1, false);
-      linfo_pub_=nh.advertise<sensor_msgs::CameraInfo> ("left/camera_info", 1, false);
-      rinfo_pub_=nh.advertise<sensor_msgs::CameraInfo> ("right/camera_info", 1, false);
-      pattern_raw_pub_=nh.advertise<ensenso::RawStereoPattern> ("pattern/stereo", 1, false);
-      pattern_pose_pub_=nh.advertise<geometry_msgs::PoseStamped> ("pattern/pose", 1, false);
+      linfo_pub_= nh.advertise<sensor_msgs::CameraInfo> ("left/camera_info", 1, false);
+      rinfo_pub_= nh.advertise<sensor_msgs::CameraInfo> ("right/camera_info", 1, false);
+      pattern_raw_pub_= nh.advertise<ensenso::RawStereoPattern> ("pattern/stereo", 1, false);
+      pattern_pose_pub_= nh.advertise<geometry_msgs::PoseStamped> ("pattern/pose", 1, false);
       // Initialize Ensenso
       ensenso_ptr_.reset(new pcl::EnsensoGrabber);
       ensenso_ptr_->openDevice(serial);
@@ -102,18 +95,16 @@ class EnsensoDriver
       ensenso_ptr_->storeCalibrationPattern(stream_calib_pattern_);
       // Start dynamic reconfigure server
       dynamic_reconfigure::Server<ensenso::CameraParametersConfig>::CallbackType f;
-      f = boost::bind(&EnsensoDriver::CameraParametersCallback, this, _1, _2);
+      f = boost::bind(&EnsensoROSInterface::CameraParametersCallback, this, _1, _2);
       reconfigure_server_.setCallback(f);
-      // Start the camera.
-      ensenso_ptr_->start();
       // Advertise services
-      calibrate_srv_ = nh.advertiseService("calibrate_handeye", &EnsensoDriver::calibrateHandEyeCB, this);
-      pattern_srv_ = nh.advertiseService("estimate_pattern_pose", &EnsensoDriver::estimatePatternPoseCB, this);
-      collect_srv_ = nh.advertiseService("collect_pattern", &EnsensoDriver::collectPatternCB, this);
+      calibrate_srv_ = nh.advertiseService("calibrate_handeye", &EnsensoROSInterface::calibrateHandEyeCB, this);
+      pattern_srv_ = nh.advertiseService("estimate_pattern_pose", &EnsensoROSInterface::estimatePatternPoseCB, this);
+      collect_srv_ = nh.advertiseService("collect_pattern", &EnsensoROSInterface::collectPatternCB, this);
       ROS_INFO("Finished [ensenso_driver] initialization");
     }
 
-    ~EnsensoDriver()
+    ~EnsensoROSInterface()
     {
       connection_.disconnect();
       ensenso_ptr_->closeTcpPort();
@@ -330,20 +321,20 @@ class EnsensoDriver
         boost::function<void(
           const boost::shared_ptr<PointCloudXYZ>&,
           const boost::shared_ptr<PairOfImages>&,
-          const boost::shared_ptr<PairOfImages>&)> f = boost::bind (&EnsensoDriver::grabberCallback, this, _1, _2, _3);
+          const boost::shared_ptr<PairOfImages>&)> f = boost::bind (&EnsensoROSInterface::grabberCallback, this, _1, _2, _3);
         connection_ = ensenso_ptr_->registerCallback(f);
       }
       else if (images)
       {
         boost::function<void(
           const boost::shared_ptr<PairOfImages>&,
-          const boost::shared_ptr<PairOfImages>&)> f = boost::bind (&EnsensoDriver::grabberCallback, this, _1, _2);
+          const boost::shared_ptr<PairOfImages>&)> f = boost::bind (&EnsensoROSInterface::grabberCallback, this, _1, _2);
         connection_ = ensenso_ptr_->registerCallback(f);
       }
       else if (cloud)
       {
         boost::function<void(
-            const boost::shared_ptr<PointCloudXYZ>&)> f = boost::bind (&EnsensoDriver::grabberCallback, this, _1);
+            const boost::shared_ptr<PointCloudXYZ>&)> f = boost::bind (&EnsensoROSInterface::grabberCallback, this, _1);
         connection_ = ensenso_ptr_->registerCallback(f);
       }
       if (was_running)
@@ -508,6 +499,92 @@ class EnsensoDriver
     }
 };
 
+/**
+ * \brief Get the list of Ensenso cameras to load from a XmlRpc parameter
+ *
+ * The input parameter should be a list of dictionaries with 'name' and 'serial' keys. In a launch
+ * file, for example:
+ *
+ * \code
+ * <rosparam param="cameras">
+ *     - name: front_cam
+ *       serial: 000001
+ *     - name: rear_cam
+ *       serial: 000002
+ * </rosparam>
+ * \endcode
+ *
+ * The output will be a map with the camera names as keys and the serial numbers as values.
+ */
+std::map<std::string, std::string> getCameraList(XmlRpc::XmlRpcValue &param);
+
+class EnsensoDriver
+{
+public:
+  EnsensoDriver(ros::NodeHandle nh)
+  {
+    ros::NodeHandle nhp("~");
+    XmlRpc::XmlRpcValue cameras_param;
+    if (! nhp.getParam("cameras", cameras_param))
+      throw std::runtime_error("Failed to load required parameter [~cameras]");
+
+    try
+    {
+      std::map<std::string, std::string> cameras = getCameraList(cameras_param);
+
+      //Create a `EnsensoROSInterface` object for each camera to load, passing a `NodeHandle` object
+      //with the camera name as a subnamespace
+      for(const auto& camera_it : cameras)
+      {
+        std::string camera_name = camera_it.first;
+        std::string serial_number = camera_it.second;
+        ensensos_.push_back(
+            std::make_shared<EnsensoROSInterface>(ros::NodeHandle(nh, camera_name), serial_number)
+        );
+      }
+    }
+    catch (XmlRpc::XmlRpcException &ex)
+    {
+      throw std::runtime_error("XmlRpc exception: " + ex.getMessage());
+    }
+  }
+
+private:
+  typedef std::shared_ptr<EnsensoROSInterface> EnsensoPtr;
+  std::vector<EnsensoPtr> ensensos_;
+};
+
+std::map<std::string, std::string> getCameraList(XmlRpc::XmlRpcValue &param)
+{
+  if (param.getType() != XmlRpc::XmlRpcValue::TypeArray)
+    throw std::runtime_error("Parameter [~cameras] must be an array");
+  std::map<std::string,std::string> cameras;
+  for (int i=0; i < param.size(); ++i)
+  {
+    XmlRpc::XmlRpcValue elem = param[i];
+    if (elem.getType() != XmlRpc::XmlRpcValue::TypeStruct)
+      throw std::runtime_error("Array element of [~cameras] parameter must be a dictionary");
+
+    if (! elem.hasMember("name"))
+      throw std::runtime_error("Array element of [~cameras] parameter must have 'name' key");
+    if (elem["name"].getType() != XmlRpc::XmlRpcValue::TypeString)
+      throw std::runtime_error("Value for 'name' key in [~cameras] parameter must be a string");
+    std::string camera_name = elem["name"];
+
+    if (! elem.hasMember("serial"))
+      throw std::runtime_error("Array element of [~cameras] parameter must have 'serial' key");
+    std::string camera_serial;
+    if (elem["serial"].getType() == XmlRpc::XmlRpcValue::TypeString)
+      camera_serial = static_cast<std::string>(elem["serial"]);
+    else if (elem["serial"].getType() == XmlRpc::XmlRpcValue::TypeInt)
+      camera_serial = std::to_string(static_cast<int>(elem["serial"]));
+    else
+      throw std::runtime_error("Value for 'serial' key in [~cameras] parameter must be a string or int");
+
+    cameras.insert(std::make_pair(camera_name, camera_serial));
+  }
+  return cameras;
+}
 
 int main(int argc, char **argv)
 {
