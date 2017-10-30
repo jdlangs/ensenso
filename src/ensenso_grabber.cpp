@@ -286,39 +286,38 @@ int pcl::EnsensoGrabber::enumDevices () const
   return (camera_count);
 }
 
-bool pcl::EnsensoGrabber::getCameraInfo(std::string serial, std::string cam, sensor_msgs::CameraInfo &cam_info) const
+bool pcl::EnsensoGrabber::getCameraInfo(std::string cam, sensor_msgs::CameraInfo &cam_info) const
 {
   try
   {
-    NxLibItem camera = cameras_.at(serial);
-    cam_info.width = camera[itmSensor][itmSize][0].asInt();
-    cam_info.height = camera[itmSensor][itmSize][1].asInt();
+    cam_info.width = camera_[itmSensor][itmSize][0].asInt();
+    cam_info.height = camera_[itmSensor][itmSize][1].asInt();
     cam_info.distortion_model = "plumb_bob";
     // Distorsion factors
     cam_info.D.resize(5);
     for(std::size_t i = 0; i < cam_info.D.size(); ++i)
-      cam_info.D[i] = camera[itmCalibration][itmMonocular][cam][itmDistortion][i].asDouble();
+      cam_info.D[i] = camera_[itmCalibration][itmMonocular][cam][itmDistortion][i].asDouble();
     // K and R matrices
     for(std::size_t i = 0; i < 3; ++i)
     {
       for(std::size_t j = 0; j < 3; ++j)
       {
-        cam_info.K[3*i+j] = camera[itmCalibration][itmMonocular][cam][itmCamera][j][i].asDouble();
-        cam_info.R[3*i+j] = camera[itmCalibration][itmDynamic][itmStereo][cam][itmRotation][j][i].asDouble();
+        cam_info.K[3*i+j] = camera_[itmCalibration][itmMonocular][cam][itmCamera][j][i].asDouble();
+        cam_info.R[3*i+j] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmRotation][j][i].asDouble();
       }
     }
-    cam_info.P[0] = camera[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][0][0].asDouble();
-    cam_info.P[1] = camera[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][1][0].asDouble();
-    cam_info.P[2] = camera[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][2][0].asDouble();
+    cam_info.P[0] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][0][0].asDouble();
+    cam_info.P[1] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][1][0].asDouble();
+    cam_info.P[2] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][2][0].asDouble();
     cam_info.P[3] = 0.0;
-    cam_info.P[4] = camera[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][0][1].asDouble();
-    cam_info.P[5] = camera[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][1][1].asDouble();
-    cam_info.P[6] = camera[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][2][1].asDouble();
+    cam_info.P[4] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][0][1].asDouble();
+    cam_info.P[5] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][1][1].asDouble();
+    cam_info.P[6] = camera_[itmCalibration][itmDynamic][itmStereo][cam][itmCamera][2][1].asDouble();
     cam_info.P[7] = 0.0;
     cam_info.P[10] = 1.0;
     if (cam == "Right")
     {
-      double B = camera[itmCalibration][itmStereo][itmBaseline].asDouble() / 1000.0;
+      double B = camera_[itmCalibration][itmStereo][itmBaseline].asDouble() / 1000.0;
       double fx = cam_info.P[0];
       cam_info.P[3] = (-fx * B);
     }
@@ -536,7 +535,7 @@ bool pcl::EnsensoGrabber::openDevice (std::string serial)
     open.execute ();
 
     //Store for direct future use
-    cameras_[serial] = camera;
+    camera_ = camera;
   }
   catch (NxLibException &ex)
   {

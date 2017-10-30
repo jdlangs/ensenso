@@ -59,7 +59,8 @@ class EnsensoDriver
     std::string                       camera_frame_id_;
     // Ensenso grabber
     boost::signals2::connection       connection_;
-    pcl::EnsensoGrabber::Ptr          ensenso_ptr_;
+
+    std::map<std::string, pcl::EnsensoGrabber::Ptr> ensensos_;
 
   public:
      EnsensoDriver(ros::NodeHandle nh):
