@@ -467,6 +467,9 @@ protected:
     
     /** @brief Reference to the camera tree */
     NxLibItem camera_;
+
+    /** @brief The name of this grabber's NxLib command subnode */
+    std::string command_node_;
     
     /** @brief Reference to the NxLib tree root */
     boost::shared_ptr<const NxLibItem> root_;
@@ -498,12 +501,6 @@ protected:
     /** @brief Mutual exclusion for FPS computation */
     mutable boost::mutex fps_mutex_;
 
-    /** @brief Mutual exclusion for any NxLib command.
-     *
-     * This is required when multiple cameras are running in the same process
-     */
-    mutable boost::mutex nxlib_mutex_;
-    
     /** @brief Convert an Ensenso time stamp into a PCL/ROS time stamp
      * @param[in] ensenso_stamp
      * @return PCL stamp
