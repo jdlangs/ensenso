@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="rviz" default="false" />
+
+  <!-- Front camera -->
+  <include file="$(find ensenso)/launch/camera.launch" ns="sensor_front">
+    <arg name="sensor_name" value="sensor_front"/>
+    <arg name="serial" value="160678"/>
+  </include>
+  <!-- Rear camera -->
+  <include file="$(find ensenso)/launch/viewer.launch" ns="sensor_rear">
+    <arg name="sensor_name" value="sensor_rear"/>
+    <arg name="serial" value="171576"/>
+  </include>
+
+  <group if="$(arg rviz)">
+    <node name="rviz_node" pkg="rviz" type="rviz" args="-d $(find ensenso)/config/dual.rviz" />
+  </group>
+</launch>
