@@ -17,6 +17,10 @@
         - name: sensor_rear
           serial: 171576
     </rosparam>
+    <param name="sensor_front/camera_frame_id" value="ensenso_frame" />
+    <rosparam ns="sensor_front" command="load" file="$(find ensenso)/config/sensor_front_params.yaml" />
+    <param name="sensor_rear/camera_frame_id" value="ensenso_frame" />
+    <rosparam ns="sensor_rear" command="load" file="$(find ensenso)/config/sensor_rear_params.yaml" />
   </node>
   
   <group if="$(arg rqt)">

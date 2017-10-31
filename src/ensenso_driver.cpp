@@ -73,9 +73,7 @@ class EnsensoROSInterface
       if (! nhp.getParam("camera_frame_id", camera_frame_id_))
         ROS_WARN_STREAM("Parameter [~camera_frame_id] not loaded, using default: " <<
                         camera_frame_id_);
-      if (! nhp.getParam("stream_calib_pattern", stream_calib_pattern_))
-        ROS_WARN_STREAM("Parameter [~stream_calib_pattern] not loaded, using default: " <<
-                        (stream_calib_pattern_ ? "TRUE":"FALSE"));
+      nhp.getParam("stream_calib_pattern", stream_calib_pattern_);
 
       // Advertise topics
       image_transport::ImageTransport it(nh);
@@ -83,35 +81,59 @@ class EnsensoROSInterface
       r_raw_pub_ = it.advertiseCamera("right/image_raw", 1);
       l_rectified_pub_ = it.advertise("left/image_rect", 1);
       r_rectified_pub_ = it.advertise("right/image_rect", 1);
-      cloud_pub_ = nh.advertise<sensor_msgs::PointCloud2 >("depth/points", 1, false);
-      linfo_pub_= nh.advertise<sensor_msgs::CameraInfo> ("left/camera_info", 1, false);
-      rinfo_pub_= nh.advertise<sensor_msgs::CameraInfo> ("right/camera_info", 1, false);
-      pattern_raw_pub_= nh.advertise<ensenso::RawStereoPattern> ("pattern/stereo", 1, false);
-      pattern_pose_pub_= nh.advertise<geometry_msgs::PoseStamped> ("pattern/pose", 1, false);
+      cloud_pub_ = nh.advertise<sensor_msgs::PointCloud2>("depth/points", 1, false);
+      linfo_pub_= nh.advertise<sensor_msgs::CameraInfo>("left/camera_info", 1, false);
+      rinfo_pub_= nh.advertise<sensor_msgs::CameraInfo>("right/camera_info", 1, false);
+      pattern_raw_pub_= nh.advertise<ensenso::RawStereoPattern>("pattern/stereo", 1, false);
+      pattern_pose_pub_= nh.advertise<geometry_msgs::PoseStamped>("pattern/pose", 1, false);
       // Initialize Ensenso
       ensenso_ptr_.reset(new pcl::EnsensoGrabber);
       ensenso_ptr_->openDevice(serial);
       ensenso_ptr_->openTcpPort();
-      ensenso_ptr_->storeCalibrationPattern(stream_calib_pattern_);
+      //ensenso_ptr_->storeCalibrationPattern(stream_calib_pattern_);
+
       // Start dynamic reconfigure server
-      dynamic_reconfigure::Server<ensenso::CameraParametersConfig>::CallbackType f;
-      f = boost::bind(&EnsensoROSInterface::CameraParametersCallback, this, _1, _2);
-      reconfigure_server_.setCallback(f);
+      //dynamic_reconfigure::Server<ensenso::CameraParametersConfig>::CallbackType f;
+      //f = boost::bind(&EnsensoROSInterface::CameraParametersCallback, this, _1, _2);
+      //reconfigure_server_.setCallback(f);
+
       // Advertise services
-      calibrate_srv_ = nh.advertiseService("calibrate_handeye", &EnsensoROSInterface::calibrateHandEyeCB, this);
-      pattern_srv_ = nh.advertiseService("estimate_pattern_pose", &EnsensoROSInterface::estimatePatternPoseCB, this);
-      collect_srv_ = nh.advertiseService("collect_pattern", &EnsensoROSInterface::collectPatternCB, this);
+      calibrate_srv_ = nh.advertiseService(
+          "calibrate_handeye",
+          &EnsensoROSInterface::calibrateHandEyeCB, this
+      );
+      pattern_srv_ = nh.advertiseService(
+          "estimate_pattern_pose",
+          &EnsensoROSInterface::estimatePatternPoseCB, this
+      );
+      collect_srv_ = nh.advertiseService(
+          "collect_pattern",
+          &EnsensoROSInterface::collectPatternCB, this
+      );
+
+      bool stream_clouds = true;
+      bool stream_images = false;
+      configureStreaming(stream_clouds, stream_images);
       ROS_INFO("Finished [ensenso_driver] initialization");
     }
 
     ~EnsensoROSInterface()
     {
+      ROS_INFO("Shutting down ROS interface");
       connection_.disconnect();
       ensenso_ptr_->closeTcpPort();
       ensenso_ptr_->closeDevice();
     }
 
-    bool calibrateHandEyeCB(ensenso::CalibrateHandEye::Request& req, ensenso::CalibrateHandEye::Response &res)
+    void start()
+    {
+      ensenso_ptr_->start();
+    }
+
+    bool calibrateHandEyeCB(
+        ensenso::CalibrateHandEye::Request& req,
+        ensenso::CalibrateHandEye::Response &res
+    )
     {
       bool was_running = ensenso_ptr_->isRunning();
       if (was_running)
@@ -263,7 +285,10 @@ class EnsensoROSInterface
       configureStreaming(config.Cloud, config.Images);
     }
 
-    bool collectPatternCB(ensenso::CollectPattern::Request& req, ensenso::CollectPattern::Response &res)
+    bool collectPatternCB(
+        ensenso::CollectPattern::Request& req,
+        ensenso::CollectPattern::Response &res
+    )
     {
       bool was_running = ensenso_ptr_->isRunning();
       if (was_running)
@@ -321,20 +346,26 @@ class EnsensoROSInterface
         boost::function<void(
           const boost::shared_ptr<PointCloudXYZ>&,
           const boost::shared_ptr<PairOfImages>&,
-          const boost::shared_ptr<PairOfImages>&)> f = boost::bind (&EnsensoROSInterface::grabberCallback, this, _1, _2, _3);
+          const boost::shared_ptr<PairOfImages>&)> f = boost::bind(
+              &EnsensoROSInterface::grabberCallback, this, _1, _2, _3
+          );
         connection_ = ensenso_ptr_->registerCallback(f);
       }
       else if (images)
       {
         boost::function<void(
           const boost::shared_ptr<PairOfImages>&,
-          const boost::shared_ptr<PairOfImages>&)> f = boost::bind (&EnsensoROSInterface::grabberCallback, this, _1, _2);
+          const boost::shared_ptr<PairOfImages>&)> f = boost::bind(
+              &EnsensoROSInterface::grabberCallback, this, _1, _2
+          );
         connection_ = ensenso_ptr_->registerCallback(f);
       }
       else if (cloud)
       {
         boost::function<void(
-            const boost::shared_ptr<PointCloudXYZ>&)> f = boost::bind (&EnsensoROSInterface::grabberCallback, this, _1);
+            const boost::shared_ptr<PointCloudXYZ>&)> f = boost::bind(
+                &EnsensoROSInterface::grabberCallback, this, _1
+            );
         connection_ = ensenso_ptr_->registerCallback(f);
       }
       if (was_running)
@@ -342,7 +373,10 @@ class EnsensoROSInterface
       return true;
     }
 
-    bool estimatePatternPoseCB(ensenso::EstimatePatternPose::Request& req, ensenso::EstimatePatternPose::Response &res)
+    bool estimatePatternPoseCB(
+        ensenso::EstimatePatternPose::Request& req,
+        ensenso::EstimatePatternPose::Response &res
+    )
     {
       bool was_running = ensenso_ptr_->isRunning();
       if (was_running)
@@ -372,7 +406,10 @@ class EnsensoROSInterface
       }
     }
 
-    void grabberCallback( const boost::shared_ptr<PairOfImages>& rawimages, const boost::shared_ptr<PairOfImages>& rectifiedimages)
+    void grabberCallback(
+        const boost::shared_ptr<PairOfImages>& rawimages,
+        const boost::shared_ptr<PairOfImages>& rectifiedimages
+    )
     {
       ros::Time now = ros::Time::now();
       // Get cameras info
@@ -396,8 +433,11 @@ class EnsensoROSInterface
       publishCalibrationPattern(now);
     }
 
-    void grabberCallback( const boost::shared_ptr<PointCloudXYZ>& cloud,
-                          const boost::shared_ptr<PairOfImages>& rawimages, const boost::shared_ptr<PairOfImages>& rectifiedimages)
+    void grabberCallback(
+        const boost::shared_ptr<PointCloudXYZ>& cloud,
+        const boost::shared_ptr<PairOfImages>& rawimages,
+        const boost::shared_ptr<PairOfImages>& rectifiedimages
+    )
     {
       ros::Time now = ros::Time::now();
       // Get cameras info
@@ -446,7 +486,8 @@ class EnsensoROSInterface
         Eigen::Affine3d pattern_pose;
         std::vector<int> grid_size;
         std::vector<Eigen::Vector2d> left_points, right_points;
-        if ( ensenso_ptr_->getLastCalibrationPattern (grid_size, grid_spacing, left_points, right_points, pattern_pose) )
+        if (ensenso_ptr_->getLastCalibrationPattern(
+              grid_size, grid_spacing, left_points, right_points, pattern_pose))
         {
           if (raw_subs > 0)
           {
@@ -528,6 +569,20 @@ public:
     if (! nhp.getParam("cameras", cameras_param))
       throw std::runtime_error("Failed to load required parameter [~cameras]");
 
+    ROS_INFO("Initialising nxLib");
+    try
+    {
+      nxLibInitialize();
+    }
+    catch (NxLibException &ex)
+    {
+      std::ostringstream err_str_stream;
+      err_str_stream << "Failed to initialize NxLib (error code " << 
+                        ex.getErrorCode() << "): " <<
+                        ex.getErrorText();
+      throw std::runtime_error(err_str_stream.str());
+    }
+
     try
     {
       std::map<std::string, std::string> cameras = getCameraList(cameras_param);
@@ -546,6 +601,26 @@ public:
     catch (XmlRpc::XmlRpcException &ex)
     {
       throw std::runtime_error("XmlRpc exception: " + ex.getMessage());
+    }
+
+    for (const EnsensoPtr &ensenso : ensensos_)
+    {
+      ensenso->start();
+    }
+  }
+
+  ~EnsensoDriver()
+  {
+    ROS_INFO("Shutting down driver");
+    try
+    {
+      nxLibFinalize();
+    }
+    catch (NxLibException &ex)
+    {
+      ROS_ERROR_STREAM("Failed to close NxLib (error code " << 
+                        ex.getErrorCode() << "): " <<
+                        ex.getErrorText());
     }
   }
 
@@ -600,5 +675,11 @@ int main(int argc, char **argv)
     ROS_ERROR_STREAM(ex.what()); 
     return 1;
   }
+  catch (const std::logic_error &ex)
+  {
+    ROS_ERROR_STREAM(ex.what()); 
+    return 2;
+  }
+  ROS_INFO("Shutdown requested");
   return 0;
 }

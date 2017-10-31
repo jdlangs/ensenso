@@ -20,22 +20,11 @@ pcl::EnsensoGrabber::EnsensoGrabber () :
   store_calibration_pattern_ (false),
   running_ (false),
   tcp_open_ (false),
-  command_node_ ("Default")
+  serial_number_ ("")
 {
   point_cloud_signal_ = createSignal<sig_cb_ensenso_point_cloud> ();
   images_signal_ = createSignal<sig_cb_ensenso_images> ();
   point_cloud_images_signal_ = createSignal<sig_cb_ensenso_point_cloud_images> ();
-  PCL_INFO ("Initialising nxLib\n");
-  try
-  {
-    nxLibInitialize ();
-    root_.reset (new NxLibItem);
-  }
-  catch (NxLibException &ex)
-  {
-    ensensoExceptionHandling (ex, "EnsensoGrabber");
-    PCL_THROW_EXCEPTION (pcl::IOException, "Could not initialise NxLib.");  // If constructor fails; throw exception
-  }
 }
 
 pcl::EnsensoGrabber::~EnsensoGrabber () throw ()
@@ -43,7 +32,6 @@ pcl::EnsensoGrabber::~EnsensoGrabber () throw ()
   try
   {
     stop ();
-    root_.reset ();
 
     disconnect_all_slots<sig_cb_ensenso_point_cloud> ();
     disconnect_all_slots<sig_cb_ensenso_images> ();
@@ -51,7 +39,6 @@ pcl::EnsensoGrabber::~EnsensoGrabber () throw ()
 
     if (tcp_open_)
       closeTcpPort ();
-    nxLibFinalize ();
   }
   catch (...)
   {
@@ -68,7 +55,8 @@ bool pcl::EnsensoGrabber::calibrateHandEye (const std::vector<Eigen::Affine3d, E
                                             int &iterations,
                                             double &reprojection_error) const
 {
-  if ( (*root_)[itmVersion][itmMajor] <= 1 && (*root_)[itmVersion][itmMinor] < 3)
+  NxLibItem root;
+  if ( root[itmVersion][itmMajor] <= 1 && root[itmVersion][itmMinor] < 3)
   {
     PCL_WARN("EnsensoSDK 1.3.x fixes bugs into calibration optimization\n");
     PCL_WARN("please update your SDK! http://www.ensenso.de/support/sdk-download\n");
@@ -114,7 +102,8 @@ bool pcl::EnsensoGrabber::calibrateHandEye (const std::vector<Eigen::Affine3d, E
     PCL_DEBUG("pattern_seed:\n %s\n", json_pattern_seed.c_str());
     // Populate command parameters
     // It's very important to write the parameters in alphabetical order and at the same time!
-    NxLibCommand calibrate (cmdCalibrateHandEye, command_node_);
+    //NxLibCommand calibrate = localNxCommand(cmdCalibrateHandEye);
+    NxLibCommand calibrate (cmdCalibrateHandEye, serial_number_);
     calibrate.parameters ()[itmLink].setJson(json_camera_seed, false);
     calibrate.parameters ()[itmPatternPose].setJson(json_pattern_seed, false);
     calibrate.parameters ()[itmSetup] = setup;
@@ -161,7 +150,9 @@ bool pcl::EnsensoGrabber::closeDevice ()
 
   try
   {
-    NxLibCommand (cmdClose, command_node_).execute ();
+    //NxLibCommand clsCmd = localNxCommand (cmdClose);
+    NxLibCommand clsCmd (cmdClose, serial_number_);
+    //clsCmd.parameters ()[itmCameras] = camera_[itmSerialNumber].asString();
     device_open_ = false;
   }
   catch (NxLibException &ex)
@@ -193,8 +184,10 @@ int pcl::EnsensoGrabber::collectPattern (const bool buffer) const
     return (-1);
   try
   {
-    NxLibCommand (cmdCapture, command_node_).execute ();
-    NxLibCommand collect_pattern (cmdCollectPattern, command_node_);
+    //localNxCommand (cmdCapture).execute ();
+    NxLibCommand (cmdCapture, serial_number_).execute ();
+    //NxLibCommand collect_pattern = localNxCommand(cmdCollectPattern);
+    NxLibCommand collect_pattern (cmdCollectPattern, serial_number_);
     collect_pattern.parameters ()[itmBuffer].set (buffer);
     collect_pattern.parameters ()[itmDecodeData].set (false);
     collect_pattern.execute ();
@@ -214,8 +207,10 @@ double pcl::EnsensoGrabber::decodePattern () const
     return (-1.0);
   try
   {
-    NxLibCommand (cmdCapture, command_node_).execute ();
-    NxLibCommand collect_pattern (cmdCollectPattern, command_node_);
+    //localNxCommand (cmdCapture).execute ();
+    NxLibCommand (cmdCapture, serial_number_).execute ();
+    //NxLibCommand collect_pattern = localNxCommand(cmdCollectPattern);
+    NxLibCommand collect_pattern (cmdCollectPattern, serial_number_);
     collect_pattern.parameters ()[itmBuffer].set (false);
     collect_pattern.parameters ()[itmDecodeData].set (true);
     collect_pattern.execute ();
@@ -233,7 +228,8 @@ bool pcl::EnsensoGrabber::discardPatterns () const
 {
   try
   {
-    NxLibCommand (cmdDiscardPatterns, command_node_).execute ();
+    //localNxCommand (cmdDiscardPatterns).execute ();
+    NxLibCommand (cmdDiscardPatterns, serial_number_).execute ();
   }
   catch (NxLibException &ex)
   {
@@ -247,7 +243,8 @@ bool pcl::EnsensoGrabber::estimatePatternPose (Eigen::Affine3d &pose, const bool
 {
   try
   {
-    NxLibCommand estimate_pattern_pose (cmdEstimatePatternPose, command_node_);
+    //NxLibCommand estimate_pattern_pose = localNxCommand(cmdEstimatePatternPose);
+    NxLibCommand estimate_pattern_pose (cmdEstimatePatternPose, serial_number_);
     estimate_pattern_pose.parameters ()[itmAverage].set (average);
     estimate_pattern_pose.execute ();
     NxLibItem tf = estimate_pattern_pose.result ()[itmPatternPose];
@@ -402,7 +399,8 @@ pcl::uint64_t pcl::EnsensoGrabber::getPCLStamp (const double ensenso_stamp)
 
 int pcl::EnsensoGrabber::getPatternCount () const
 {
-  return ( (*root_)[itmParameters][itmPatternCount].asInt ());
+  NxLibItem root;
+  return ( root[itmParameters][itmPatternCount].asInt ());
 }
 
 bool pcl::EnsensoGrabber::grabSingleCloud (pcl::PointCloud<pcl::PointXYZ> &cloud)
@@ -415,11 +413,11 @@ bool pcl::EnsensoGrabber::grabSingleCloud (pcl::PointCloud<pcl::PointXYZ> &cloud
 
   try
   {
-    NxLibCommand nx_capture(cmdCapture, command_node_);
+    NxLibCommand nx_capture = localNxCommand(cmdCapture);
     // Stereo matching task
-    NxLibCommand nx_compute_disparity_map(cmdComputeDisparityMap, command_node_);
+    NxLibCommand nx_compute_disparity_map = localNxCommand(cmdComputeDisparityMap);
     // Convert disparity map into XYZ data for each pixel
-    NxLibCommand nx_compute_point_map(cmdComputePointMap, command_node_);
+    NxLibCommand nx_compute_point_map = localNxCommand(cmdComputePointMap);
 
     nx_capture.execute ();
     nx_compute_disparity_map.execute ();
@@ -468,7 +466,8 @@ bool pcl::EnsensoGrabber::jsonToMatrix (const std::string json, Eigen::Affine3d 
 {
   try
   {
-    NxLibCommand convert (cmdConvertTransformation, command_node_);
+    //NxLibCommand convert = localNxCommand(cmdConvertTransformation);
+    NxLibCommand convert (cmdConvertTransformation, serial_number_);
     convert.parameters ()[itmTransformation].setJson (json);
     convert.execute ();
     Eigen::Affine3d tmp (Eigen::Affine3d::Identity ());
@@ -496,12 +495,19 @@ bool pcl::EnsensoGrabber::jsonToMatrix (const std::string json, Eigen::Affine3d 
   }
 }
 
+NxLibCommand pcl::EnsensoGrabber::localNxCommand(std::string cmd) const
+{
+  std::string command_node = serial_number_ == "" ? "Default" : serial_number_;
+  return NxLibCommand(cmd, command_node);
+}
+
 bool pcl::EnsensoGrabber::matrixToJson (const Eigen::Affine3d &matrix, std::string &json,
                                         const bool pretty_format) const
 {
   try
   {
-    NxLibCommand convert (cmdConvertTransformation, command_node_);
+    //NxLibCommand convert = localNxCommand(cmdConvertTransformation);
+    NxLibCommand convert (cmdConvertTransformation, serial_number_);
     // Rotation
     convert.parameters ()[itmTransformation][0][0].set (matrix.linear ().col (0)[0]);
     convert.parameters ()[itmTransformation][0][1].set (matrix.linear ().col (0)[1]);
@@ -537,12 +543,15 @@ bool pcl::EnsensoGrabber::openDevice (std::string serial)
   try
   {
     // Create a pointer referencing the camera's tree item, for easier access:
-    NxLibItem camera = (*root_)[itmCameras][itmBySerialNo][serial];
+    NxLibItem root;
+    NxLibItem camera = root[itmCameras][itmBySerialNo][serial];
     if (!camera.exists () || camera[itmType] != valStereo)
       PCL_THROW_EXCEPTION (pcl::IOException, "Requested camera is not a stereo camera");
-    command_node_ = serial;
-    NxLibCommand open (cmdOpen, command_node_);
-    open.parameters ()[itmCameras] = camera[itmSerialNumber].asString ();
+    
+    //All commands will now be run in an Execute subnode with this camera's serial number
+    serial_number_ = serial;
+    NxLibCommand open(cmdOpen);
+    open.parameters ()[itmCameras] = serial_number_;
     open.execute ();
 
     //Store for direct future use
@@ -553,6 +562,7 @@ bool pcl::EnsensoGrabber::openDevice (std::string serial)
     ensensoExceptionHandling (ex, "openDevice");
     return (false);
   }
+  PCL_INFO ("Camera opened successfully");
   device_open_ = true;
   return (true);
 }
@@ -594,7 +604,12 @@ void pcl::EnsensoGrabber::processGrabbing ()
         }
         last = now;
 
-        NxLibCommand (cmdCapture, command_node_).execute ();
+        PCL_INFO("Capturing next image");
+
+        //NxLibCommand capCmd = localNxCommand (cmdCapture);
+        NxLibCommand capCmd (cmdCapture, serial_number_);
+        //capCmd.parameters()[itmCameras] = camera_[itmSerialNumber].asString();
+        capCmd.execute();
         double timestamp;
         camera_[itmImages][itmRaw][itmLeft].getBinaryDataInfo (0, 0, 0, 0, 0, &timestamp);
 
@@ -606,7 +621,10 @@ void pcl::EnsensoGrabber::processGrabbing ()
         if (num_slots<sig_cb_ensenso_images> () > 0 || num_slots<sig_cb_ensenso_point_cloud_images> () > 0)
         {
           // Rectify images
-          NxLibCommand (cmdRectifyImages, command_node_).execute ();
+          //NxLibCommand rectCmd = localNxCommand (cmdRectifyImages);
+          NxLibCommand rectCmd (cmdRectifyImages, serial_number_);
+          //rectCmd.parameters()[itmCameras] = camera_[itmSerialNumber].asString();
+          rectCmd.execute();
           int width, height, channels, bpe;
           bool isFlt, collected_pattern = false;
           // Try to collect calibration pattern and overlay it to the raw image
@@ -615,7 +633,9 @@ void pcl::EnsensoGrabber::processGrabbing ()
             discardPatterns();
           try
           {
-            NxLibCommand collect_pattern (cmdCollectPattern, command_node_);
+            //NxLibCommand collect_pattern = localNxCommand (cmdCollectPattern);
+            NxLibCommand collect_pattern (cmdCollectPattern, serial_number_);
+            //collect_pattern.parameters ()[itmCameras] = camera_[itmSerialNumber].asString();
             collect_pattern.parameters ()[itmBuffer].set (store_calibration_pattern_);
             collect_pattern.parameters ()[itmDecodeData].set (true);
             collect_pattern.execute ();
@@ -624,7 +644,8 @@ void pcl::EnsensoGrabber::processGrabbing ()
               // estimatePatternPose() takes ages, so, we use the raw data
               // Raw stereo pattern info
               boost::lock_guard<boost::mutex> pattern_guard(pattern_mutex_);
-              NxLibCommand get_pattern_buffers (cmdGetPatternBuffers, command_node_);
+              //NxLibCommand get_pattern_buffers = localNxCommand(cmdGetPatternBuffers);
+              NxLibCommand get_pattern_buffers (cmdGetPatternBuffers, serial_number_);
               get_pattern_buffers.execute ();
               last_stereo_pattern_ = get_pattern_buffers.result()[itmStereo][0].asJson (true);
               // Pattern pose
@@ -685,9 +706,15 @@ void pcl::EnsensoGrabber::processGrabbing ()
         if (num_slots<sig_cb_ensenso_point_cloud> () > 0 || num_slots<sig_cb_ensenso_point_cloud_images> () > 0)
         {
           // Stereo matching task
-          NxLibCommand (cmdComputeDisparityMap, command_node_).execute ();
+          //NxLibCommand dispCmd = localNxCommand (cmdComputeDisparityMap);
+          NxLibCommand dispCmd (cmdComputeDisparityMap, serial_number_);
+          //dispCmd.parameters ()[itmCameras] = camera_[itmSerialNumber].asString();
+          dispCmd.execute();
           // Convert disparity map into XYZ data for each pixel
-          NxLibCommand (cmdComputePointMap, command_node_).execute ();
+          //NxLibCommand pntCmd = localNxCommand (cmdComputePointMap);
+          NxLibCommand pntCmd (cmdComputePointMap, serial_number_);
+          //pntCmd.parameters ()[itmCameras] = camera_[itmSerialNumber].asString();
+          pntCmd.execute();
           // Get info about the computed point map and copy it into a std::vector
           std::vector<float> pointMap;
           int width, height;
@@ -929,7 +956,8 @@ if (!device_open_)
     return (false);
   try
   {
-    (*root_)[itmParameters][itmPattern][itmGridSpacing].set (grid_spacing);
+    NxLibItem root;
+    root[itmParameters][itmPattern][itmGridSpacing].set (grid_spacing);
   }
   catch (NxLibException &ex)
   {

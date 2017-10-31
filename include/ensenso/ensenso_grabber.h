@@ -468,8 +468,8 @@ protected:
     /** @brief Reference to the camera tree */
     NxLibItem camera_;
 
-    /** @brief The name of this grabber's NxLib command subnode */
-    std::string command_node_;
+    /** @brief This serial number of this grabber's camera */
+    std::string serial_number_;
     
     /** @brief Reference to the NxLib tree root */
     boost::shared_ptr<const NxLibItem> root_;
@@ -531,6 +531,12 @@ protected:
      * @return True if successful, false otherwise
      */
     bool matrixToJson (const Eigen::Affine3d &matrix, std::string &json, const bool pretty_format=true) const;
+
+    /**
+     * @brief Creates a NxLibCommand object that corresponds to the Execute subtree for this grabber
+     * @param[in] cmd The string argument passed to the NxLibCommand constructor
+     */
+    NxLibCommand localNxCommand(std::string cmd) const;
     
     /** @brief Continuously asks for images and or point clouds data from the device and publishes them if available.
      * PCL time stamps are filled for both the images and clouds grabbed (see @ref getPCLStamp)
