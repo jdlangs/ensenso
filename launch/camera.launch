@@ -2,13 +2,14 @@
 <launch>
   <arg name="serial" />
   <arg name="sensor_name" />
+  <arg name="output_frame" />
 
   <!-- Ensenso driver -->
   <node name="ensenso_driver" pkg="ensenso" type="ensenso_driver" output="screen">
     <!-- Static parameters -->
     <param name="stream_calib_pattern"  type="bool"   value="False" />
     <param name="serial"                type="string" value="$(arg serial)" />
-    <param name="camera_frame_id"       type="string" value="ensenso_frame" />
+    <param name="camera_frame_id"       type="string" value="$(arg output_frame)" />
 
     <!-- Streaming parameters -->
     <param name="Cloud"   type="bool"   value="true" />
@@ -16,5 +17,8 @@
 
     <!-- Image parameters -->
     <rosparam command="load" file="$(find ensenso)/config/$(arg sensor_name)_params.yaml" />
+
+    <!-- Topic remappings -->
+    <remap from="depth/points" to="cloud" />
   </node>
 </launch>
